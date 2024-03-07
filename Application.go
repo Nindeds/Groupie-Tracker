@@ -1,55 +1,66 @@
 package main
 
 import (
+	"fmt"
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
-	"net/url"
 )
 
-type  struct {
+const json_url = "https://groupietrackers.herokuapp.com/api"
 
+type Data struct {
+	ID           int64    `json:"id"`
+	Image        string   `json:"image"`
+	Name         string   `json:"name"`
+	Members      []string `json:"members"`
+	CreationDate int64    `json:"creationDate"`
+	FirstAlbum   string   `json:"firstAlbum"`
+	Locations    string   `json:"locations"`
+	ConcertDates string   `json:"concertDates"`
+	Relations    string   `json:"relations"`
 }
 
 func main() {
-	//Créer Appli
-	Appli := app.New()
-	//Nouvelle Fenêtre
-	Windows := Appli.NewWindow("Application")
-
-	Windows.Resize(fyne.NewSize(400, 400))
-	//Créer une url
-	url, _ := url.Parse("https://www.youtube.com/watch?v=mTde30G6NLg&list=PL5vZ49dm2gshlo1EIxFNcQFBUfLFoHPfp&index=6")
-	//Hyperlink Widget
-	Lien := widget.NewHyperlink("Visit", url)
-	//Creer un bouton avec sa fonction
-	Quitter := widget.NewButton("Quitter", func() {
-		Appli.Quit()
+	application := app.New()
+	Fenetre := application.NewWindow("Groupie Tracker")
+	Barre_de_recherche := widget.NewEntry()
+	Bouton_recherche := widget.NewButton("Rechercher", func() {
 	})
-	Box := container.NewVBox(
-		Lien,
-		Checkbox,
-		Quitter)
 
-
-	HomePage := func(){
-		container.NewVBox(
-			widget.NewLabel("HomePage"),
-			widget.NewButton("AboutPage",func(){
-				Appli.Quit()
-			}))
+	buttons := []struct {
+		nom      string
+		fonction func()
+	}{
+		{"artiste", func() {
+			Fenetre.Close()
+		}},
+		{"geolocalisation", func() { fmt.Println("Fonctionnalité du bouton 2") }},
+		{"dates", func() { fmt.Println("Fonctionnalité du bouton 3") }},
 	}
 
-	AboutPage :=
+	var BoutonApplication []fyne.CanvasObject
+	for _, button := range buttons {
+		btn := widget.NewButton(button.nom, button.fonction)
+		BoutonApplication = append(BoutonApplication, btn)
+	}
 
-	//Cocher
-	Checkbox := widget.NewCheck("êtes-vous gay", func(resultat bool) {
-		if resultat == true{
-			Windows.SetContent(Box2)	}
-	})
+	NavBarre := container.NewHBox(BoutonApplication...)
+	Fenetre.Resize(fyne.NewSize(1200, 1200))
 
-	Windows.SetContent(Box)
-	//Impérative a la fin du main
-	Windows.ShowAndRun()
+	AffichageBouton := container.NewVBox(
+		NavBarre,
+		container.NewVBox(
+			Barre_de_recherche,
+			Bouton_recherche,
+		),
+	)
+	Fenetre.SetContent(AffichageBouton)
+	Fenetre.ShowAndRun()
+}
+
+func Application(window fyne.Window) {
+
+	window.ShowAndRun()
 }
