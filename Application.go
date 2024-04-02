@@ -1,16 +1,19 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"fyne.io/fyne/v2"
+	"net/http"
+
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 )
 
-const json_url = "https://groupietrackers.herokuapp.com/api"
+const apiURL = "https://groupietrackers.herokuapp.com/api/artists"
 
-type Data struct {
+type Artist struct {
 	ID           int64    `json:"id"`
 	Image        string   `json:"image"`
 	Name         string   `json:"name"`
@@ -23,44 +26,56 @@ type Data struct {
 }
 
 func main() {
-	application := app.New()
-	Fenetre := application.NewWindow("Groupie Tracker")
-	Barre_de_recherche := widget.NewEntry()
-	Bouton_recherche := widget.NewButton("Rechercher", func() {
-	})
-
-	buttons := []struct {
-		nom      string
-		fonction func()
-	}{
-		{"artiste", func() {
-			Fenetre.Close()
-		}},
-		{"geolocalisation", func() { fmt.Println("Fonctionnalité du bouton 2") }},
-		{"dates", func() { fmt.Println("Fonctionnalité du bouton 3") }},
+	artists, err := fetchArtists(apiURL)
+	if err != nil {
+		fmt.Println("Erreur lors de la récupération des artistes :", err)
+		return
 	}
 
-	var BoutonApplication []fyne.CanvasObject
-	for _, button := range buttons {
-		btn := widget.NewButton(button.nom, button.fonction)
-		BoutonApplication = append(BoutonApplication, btn)
+	myApp := app.New()
+	myWindow := myApp.NewWindow("Groupie Tracker")
+
+	var artistNames []string
+	for _, artist := range artists {
+		artistNames = append(artistNames, artist.Name)
 	}
 
-	NavBarre := container.NewHBox(BoutonApplication...)
-	Fenetre.Resize(fyne.NewSize(1200, 1200))
-
-	AffichageBouton := container.NewVBox(
-		NavBarre,
-		container.NewVBox(
-			Barre_de_recherche,
-			Bouton_recherche,
-		),
+	// Créer une liste des noms
+	artistList := widget.NewList(
+		func() int {
+			return len(artistNames)
+		},
+		func() fyne.CanvasObject {
+			return widget.NewLabel("")
+		},
+		func(index int, obj fyne.CanvasObject) {
+			obj.(*widget.Label).SetText(artistNames[index])
+		},
 	)
-	Fenetre.SetContent(AffichageBouton)
-	Fenetre.ShowAndRun()
+
+	// Afficher la liste des artistes dans une fenêtre
+	myWindow.SetContent(container.NewVBox(
+		widget.NewLabel("Artistes :"),
+		container.NewScroll(artistList),
+	))
+	fmt.Println(artists)
+
+	myWindow.ShowAndRun()
 }
 
-func Application(window fyne.Window) {
+func fetchArtists(apiURL string) ([]Artist, error) {
+	var artists []Artist
 
-	window.ShowAndRun()
+	response, err := http.Get(apiURL)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	err = json.NewDecoder(response.Body).Decode(&artists)
+	if err != nil {
+		return nil, err
+	}
+
+	return artists, nil
 }
