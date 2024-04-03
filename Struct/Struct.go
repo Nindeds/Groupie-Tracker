@@ -1,4 +1,4 @@
-package Groupie_Tracker
+package Struct
 
 type Date struct {
 	ID    int      `json:"id"`
