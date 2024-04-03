@@ -1,0 +1,759 @@
+import (
+	// "C"
+
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+
+	"Groupie-Tracker/data_structure"
+	"Groupie-Tracker/utils"
+	"net/url"
+	"strconv"
+	"strings"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
+)
+
+func main() {
+	// Récupère la liste de tous les artistes.
+	var artists []Artist = getAllArtists()
+
+	// Déclaration de variables pour stocker les noms d'artistes et les concerts passés/futurs.
+	var listArtistName []string
+	var listConcertPast []string
+	var listConcertFutur []string
+
+	// Met à jour les relations entre les artistes et leurs concerts passés/futurs.
+	getRelations(artists)
+
+	// Crée une nouvelle application GUI.
+	appli := app.New()
+
+	// Configure le thème de l'application.
+	appli.Settings().SetTheme(theme.DarkTheme())
+
+	// Crée une nouvelle fenêtre avec un titre.
+	window := appli.NewWindow("GROUPIE TRACKER")
+
+	// Définit la taille de la fenêtre.
+	window.Resize(fyne.NewSize(1000, 700))
+
+	// Crée un menu principal pour l'application.
+	mainMenu := fyne.NewMainMenu(
+		// Menu "Fichier" avec un seul élément "Exit" qui permet de quitter l'application.
+		fyne.NewMenu("Fichier",
+			fyne.NewMenuItem("Exit", func() {
+				appli.Quit()
+			}),
+		),
+		// Menu "Support" avec des éléments comme "A propos de", "Documentation", et "Sponsor".
+		fyne.NewMenu("Support",
+			fyne.NewMenuItem("A propos de", func() {
+				u, _ := url.Parse("https://meilleurs-albums.com/principaux-concerts-en-2024/")
+				_ = appli.OpenURL(
+					u)
+			}),
+			fyne.NewMenuItem("Documentation", func() {
+				u, _ := url.Parse("https://www.nrj.be/article/23085/quels-artistes-ont-ete-les-plus-ecoutes-durant-l-annee-2022")
+				_ = appli.OpenURL(u)
+			}),
+			fyne.NewMenuItemSeparator(), // Séparateur entre les éléments.
+			fyne.NewMenuItem("Sponsor", func() {
+				u, _ := url.Parse("https://nike.com/")
+				_ = appli.OpenURL(u)
+			}),
+		))
+
+	// Configure le menu principal de la fenêtre.
+	window.SetMainMenu(mainMenu)
+
+	// Initialisation des éléments pour afficher les informations sur l'artiste sélectionné.
+	aTitle := widget.NewLabelWithStyle("Info Artist :", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	aTitle.Move(fyne.NewPos(520, 0))
+
+	// Définit un label pour afficher le nom de l'artiste sélectionné.
+	aName := widget.NewLabel(" ")
+
+	// Définit un label pour afficher les membres du groupe de l'artiste sélectionné.
+	aMembers := widget.NewLabelWithStyle(" ", fyne.TextAlignLeading, fyne.TextStyle{Bold: true, Italic: true})
+	aMembers.Move(fyne.NewPos(520, 250))
+
+	// Définit une image pour afficher la photo de l'artiste sélectionné.
+	aImage := canvas.NewImageFromFile("")
+	aImage.Resize(fyne.NewSize(150, 190))
+	aImage.Move(fyne.NewPos(520, 50))
+
+	// Définit un label pour afficher la date de création du groupe de l'artiste sélectionné.
+	aCreationDate := widget.NewLabel(" ")
+
+	// Définit un label pour afficher le titre du premier album de l'artiste sélectionné.
+	aFirstAlbum := widget.NewLabel(" ")
+
+	// Définit des labels pour les listes des concerts passés et futurs.
+	aLabelPastConcert := widget.NewLabelWithStyle("Concerts Passés :", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	aLabelPastConcert.Move(fyne.NewPos(520, 450))
+	aLabelFuturConcert := widget.NewLabelWithStyle("Concerts Futurs :", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	aLabelFuturConcert.Move(fyne.NewPos(750, 450))
+
+	// Définit une liste pour afficher les concerts passés de l'artiste sélectionné.
+	aPastConcerts := widget.NewList(
+		func() int { return 1 },
+		func() fyne.CanvasObject { return widget.NewLabel("") },
+		func(lii widget.ListItemID, co fyne.CanvasObject) {},
+	)
+	aPastConcerts.Resize(fyne.NewSize(250, 200))
+	aPastConcerts.Move(fyne.NewPos(520, 500))
+
+	// Définit une liste pour afficher les concerts futurs de l'artiste sélectionné.
+	aFuturConcerts := widget.NewList(
+		func() int { return 1 },
+		func() fyne.CanvasObject { return widget.NewLabel("") },
+		func(lii widget.ListItemID, co fyne.CanvasObject) {},
+	)
+	aFuturConcerts.Resize(fyne.NewSize(250, 200))
+	aFuturConcerts.Move(fyne.NewPos(750, 500))
+
+	// Crée une liste des noms d'artistes pour affichage.
+	for _, artist := range artists {
+		listArtistName = append(listArtistName, artist.Name)
+	}
+
+	// Crée une liste de sélection des artistes.
+	list := widget.NewList(
+		func() int { return len(listArtistName) },
+		func() fyne.CanvasObject { return widget.NewLabel("Liste des artistes") },
+		func(lii widget.ListItemID, co fyne.CanvasObject) {
+			co.(*widget.Label).SetText(listArtistName[lii])
+		},
+	)
+	list.Resize(fyne.NewSize(280, 500))
+	list.Move(fyne.NewPos(220, 0))
+
+	// Crée une zone de recherche pour filtrer les artistes.
+	searchEntry := widget.NewEntry()
+	searchButton := widget.NewButton("Rechercher", func() {
+		// Nouvelle liste pour les résultats de la recherche
+		filteredList := []string{}
+
+		// Parcourir la liste d'origine et ajouter les éléments correspondants à la nouvelle liste
+		for _, item := range listArtistName {
+			if strings.Contains(strings.ToLower(item), strings.ToLower(searchEntry.Text)) {
+				filteredList = append(filteredList, item)
+			}
+		}
+
+		// Mettre à jour la liste avec les résultats de la recherche
+		list.Length = func() int {
+			return len(filteredList)
+		}
+		list.CreateItem = func() fyne.CanvasObject {
+			return widget.NewLabel("")
+		}
+		list.UpdateItem = func(index int, item fyne.CanvasObject) {
+			item.(*widget.Label).SetText(filteredList[index])
+		}
+		list.Refresh()
+	})
+	clearButton := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+		searchEntry.SetText("")
+
+		// Mettre à jour la liste avec les résultats de la recherche
+		list.Length = func() int {
+			return len(listArtistName)
+		}
+		list.CreateItem = func() fyne.CanvasObject {
+			return widget.NewLabel("")
+		}
+		list.UpdateItem = func(index int, item fyne.CanvasObject) {
+			item.(*widget.Label).SetText(listArtistName[index])
+		}
+		list.Refresh()
+	})
+
+	searchBar := container.NewVBox(
+		searchEntry,
+		searchButton,
+		clearButton,
+	)
+	searchBar.Resize(fyne.NewSize(200, 100))
+
+	// Contenu de l'application.
+	content := container.NewWithoutLayout(
+		searchBar,
+		list,
+	)
+
+	separator := widget.NewSeparator()
+	separator.Move(fyne.NewPos(500, 0))
+
+	nameContainer := container.NewVBox(
+		aName,
+		aFirstAlbum,
+	)
+	nameContainer.Move(fyne.NewPos(750, 50))
+
+	infoArtist := container.NewWithoutLayout(
+		aTitle,
+		aImage,
+		nameContainer,
+		aMembers,
+		aPastConcerts,
+		aFuturConcerts,
+		aLabelPastConcert,
+		aLabelFuturConcert,
+	)
+	infoArtist.Resize(fyne.NewSize(480, 800))
+	infoArtist.Hide()
+
+	list.OnSelected = func(id widget.ListItemID) {
+		// Action lorsqu'un artiste est sélectionné dans la liste.
+
+		// Récupère les informations de l'artiste sélectionné.
+		artist := artists[id]
+
+		// Met à jour les différents éléments d'affichage avec les informations de l'artiste.
+		aName.Text = artist.Name
+		aName.Refresh()
+
+		// Construit la liste des membres du groupe de l'artiste.
+		aMembersList := "Membre : \n"
+		for _, member := range artist.Members {
+			aMembersList += "- " + member + "\n"
+		}
+		aMembers.Text = aMembersList
+		aMembers.Refresh()
+
+		aCreationDate.Text = strconv.Itoa(artist.CreationDate)
+		aImagePath := downloadImage(artist.Image)
+		aImage.File = aImagePath
+		aImage.Refresh()
+
+		aFirstAlbum.Text = "Date première album : " + artist.FirstAlbum
+		aFirstAlbum.Refresh()
+
+		// Construit la liste des concerts passés de l'artiste.
+		listConcertPast = nil
+		for _, concert := range artists[id].PastConcert {
+			listConcertPast = append(listConcertPast, concert.Location+" : "+concert.Dates)
+		}
+		aPastConcerts.Length = func() int {
+			return len(listConcertPast)
+		}
+		aPastConcerts.CreateItem = func() fyne.CanvasObject {
+			return widget.NewLabel("")
+		}
+		aPastConcerts.UpdateItem = func(index int, item fyne.CanvasObject) {
+			item.(*widget.Label).SetText(listConcertPast[index])
+		}
+		aPastConcerts.Refresh()
+
+		// Construit la liste des concerts futurs de l'artiste.
+		listConcertFutur = nil
+		for _, concert := range artists[id].FuturConcert {
+			listConcertFutur = append(listConcertFutur, concert.Location+" : "+concert.Dates)
+		}
+		aFuturConcerts.Length = func() int {
+			return len(listConcertFutur)
+		}
+		aFuturConcerts.CreateItem = func() fyne.CanvasObject {
+			return widget.NewLabel("")
+		}
+		aFuturConcerts.UpdateItem = func(index int, item fyne.CanvasObject) {
+			item.(*widget.Label).SetText(listConcertFutur[index])
+		}
+		aFuturConcerts.Refresh()
+
+		// Affiche les informations de l'artiste sélectionné.
+		if infoArtist.Hidden {
+			infoArtist.Show()
+		}
+	}
+
+	// Configure le contenu de la fenêtre.
+	window.SetContent(
+		container.NewWithoutLayout(
+			content,
+			separator,
+			infoArtist),
+	)
+
+	// Affiche et exécute l'application.
+	window.ShowAndRun()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+package data_structure
+
+type Relations struct {
+	Relations []DatesLocation `json:"index"`
+}
+type DatesLocation struct {
+	ID             int                 `json:"id"`
+	DatesLocations map[string][]string `json:"datesLocations"`
+}
+type SpotifyToken []struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   string `json:"expires_in"`
+}
+type Concert struct {
+	Location string
+	Dates    string
+}
+
+type Artist struct {
+	ID           int      `json:"id"`
+	Image        string   `json:"image"`
+	Name         string   `json:"name"`
+	Members      []string `json:"members"`
+	CreationDate int      `json:"creationDate"`
+	FirstAlbum   string   `json:"firstAlbum"`
+	Locations    string   `json:"locations"`
+	ConcertDates string   `json:"concertDates"`
+	RelationsUrl string   `json:"relations"`
+	PastConcert  []Concert
+	FuturConcert []Concert
+}
+
+// Télécharge une image depuis une URL
+func DownloadImage(url string) string {
+
+	// Effectue une requête HTTP GET pour récupérer l'image à partir de l'URL.
+	resp, err := http.Get(url)
+	if err != nil {
+		// En cas d'erreur affiche l'erreur.
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	// Crée un fichier temporaire pour stocker l'image téléchargée.
+	file, err := ioutil.TempFile("", "image")
+	if err != nil {
+		// En cas d'erreur affiche l'erreur.
+		panic(err)
+	}
+	defer file.Close()
+
+	// Copie le contenu de la réponse HTTP (l'image téléchargée) dans le fichier temporaire.
+	_, err = io.Copy(file, resp.Body)
+	if err != nil {
+		// En cas d'erreur affiche l'erreur.
+		panic(err)
+	}
+
+	// Return fichier temporaire créé pour l'image téléchargée.
+	return file.Name()
+}
+
+// Récupère la liste de tous les artistes depuis l'API et la retourne.
+func GetAllArtists() []data_structure.Artist {
+
+	// Déclare une variable pour stocker la liste des artistes.
+	var artists []data_structure.Artist
+
+	
+	// Effectue une requête HTTP GET pour récupérer les données des artistes depuis l'API.
+	resp, err := http.Get("https://groupietrackers.herokuapp.com/api/artists")
+	if err != nil {
+		// En cas d'erreur lors de la requête, panique et affiche l'erreur.
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	// Décode les données JSON de la réponse HTTP dans la liste des artistes.
+	err = json.NewDecoder(resp.Body).Decode(&artists)
+	if err != nil {
+		// En cas d'erreur renvoie nil.
+		return nil
+	}
+
+	// Return la liste des artistes récupérée depuis l'API.
+	return artists
+}
+
+// Récupère les relations entre artistes et les ajoute aux informations d'artistes existantes.
+func GetRelations(artists []data_structure.Artist) []data_structure.Artist {
+
+	var relations data_structure.Relations
+
+	// Crée une copie de la liste d'artistes pour mettre à jour les données.
+	var newArtists []data_structure.Artist = artists
+
+	// Effectue une requête HTTP GET pour récupérer les relations depuis l'API.
+	resp, err := http.Get("https://groupietrackers.herokuapp.com/api/relation")
+	if err != nil {
+		// En cas d'erreur affiche l'erreur.
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	// Décode les données JSON de la réponse HTTP dans la structure de relations.
+	err = json.NewDecoder(resp.Body).Decode(&relations)
+	if err != nil {
+		// En cas d'erreur affiche l'erreur.
+		panic(err)
+	}
+
+	// Parcourt les relations et ajoute les concerts aux artistes correspondants.
+	for _, element := range relations.Relations {
+		// Parcourt chaque ville et les dates de concerts associées dans l'élément.
+		for city, dates := range element.DatesLocations {
+			// Parcourt chaque date de concert dans la liste des dates de la ville.
+			for _, dateString := range dates {
+				// Parse la date au format "02-01-2006".
+				date, err := time.Parse("02-01-2006", dateString)
+				if err != nil {
+					// En cas d'erreur lors du parsing de la date, panique et affiche l'erreur.
+					panic(err)
+				}
+
+				// Ajoute le concert au tableau approprié (passé ou futur) de l'artiste.
+				if date.Before(time.Now()) {
+					// Si la date est antérieure à la date actuelle, ajoute le concert aux concerts passés.
+					newArtists[element.ID-1].PastConcert = append(newArtists[element.ID-1].PastConcert, data_structure.Concert{city, dateString})
+				} else {
+					// Sinon, ajoute le concert aux concerts futurs.
+					newArtists[element.ID-1].FuturConcert = append(newArtists[element.ID-1].PastConcert, data_structure.Concert{city, dateString})
+				}
+			}
+		}
+	}
+
+	// Renvoie la liste d'artistes mise à jour avec les informations sur les concerts.
+	return newArtists
+}
+
+import (
+	//"C"
+
+   "bytes"
+   "encoding/json"
+   "fmt"
+   "net/http"
+
+   "Groupie-Tracker/data_structure"
+   "Groupie-Tracker/utils"
+   "net/url"
+   "strconv"
+   "strings"
+
+   "fyne.io/fyne/v2"
+   "fyne.io/fyne/v2/app"
+   "fyne.io/fyne/v2/canvas"
+   "fyne.io/fyne/v2/container"
+   "fyne.io/fyne/v2/theme"
+   "fyne.io/fyne/v2/widget"
+)
+
+var client *http.Client
+
+func main() {
+   // Récupère la liste de tous les artistes.
+   var artists []data_structure.Artist = utils.GetAllArtists()
+
+   // Déclaration de variables pour stocker les noms d'artistes et les concerts passés/futurs.
+   var listArtistName []string
+   var listConcertPast []string
+   var listConcertFutur []string
+
+   // Met à jour les relations entre les artistes et leurs concerts passés/futurs.
+   utils.GetRelations(artists)
+
+   // Crée une nouvelle application GUI.
+   appli := app.New()
+
+   // Configure le thème de l'application.
+   appli.Settings().SetTheme(theme.DarkTheme())
+
+   // Crée une nouvelle fenêtre avec un titre.
+   window := appli.NewWindow("GROUPIE TRACKER")
+
+   // Définit la taille de la fenêtre.
+   window.Resize(fyne.NewSize(1000, 700))
+
+   // Crée un menu principal pour l'application.
+   mainMenu := fyne.NewMainMenu(
+	   // Menu "Support" avec des éléments comme "A propos de", "Documentation", et "Sponsor".
+	   fyne.NewMenu("Support",
+		   fyne.NewMenuItem("A propos de", func() {
+			   u, _ := url.Parse("https://meilleurs-albums.com/principaux-concerts-en-2024/")
+			   _ = appli.OpenURL(
+				   u)
+		   }),
+		   fyne.NewMenuItem("Documentation", func() {
+			   u, _ := url.Parse("https://www.nrj.be/article/23085/quels-artistes-ont-ete-les-plus-ecoutes-durant-l-annee-2022")
+			   _ = appli.OpenURL(u)
+		   }),
+		   fyne.NewMenuItemSeparator(), // Séparateur entre les éléments.
+		   fyne.NewMenuItem("Sponsor", func() {
+			   u, _ := url.Parse("https://nike.com/")
+			   _ = appli.OpenURL(u)
+		   }),
+	   ))
+
+   // Configure le menu principal de la fenêtre.
+   window.SetMainMenu(mainMenu)
+
+   // Initialisation des éléments pour afficher les informations sur l'artiste sélectionné.
+   aTitle := widget.NewLabelWithStyle("Info Artist :", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+   aTitle.Move(fyne.NewPos(520, 0))
+
+   // Définit un label pour afficher le nom de l'artiste sélectionné.
+   aName := widget.NewLabel(" ")
+
+   // Définit un label pour afficher les membres du groupe de l'artiste sélectionné.
+   aMembers := widget.NewLabelWithStyle(" ", fyne.TextAlignLeading, fyne.TextStyle{Bold: true, Italic: true})
+   aMembers.Move(fyne.NewPos(520, 250))
+
+   // Définit une image pour afficher la photo de l'artiste sélectionné.
+   aImage := canvas.NewImageFromFile("")
+   aImage.Resize(fyne.NewSize(150, 190))
+   aImage.Move(fyne.NewPos(520, 50))
+
+   // Définit un label pour afficher la date de création du groupe de l'artiste sélectionné.
+   aCreationDate := widget.NewLabel(" ")
+
+   // Définit un label pour afficher le titre du premier album de l'artiste sélectionné.
+   aFirstAlbum := widget.NewLabel(" ")
+
+   // Définit des labels pour les listes des concerts passés et futurs.
+   aLabelPastConcert := widget.NewLabelWithStyle("Concerts Passés :", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+   aLabelPastConcert.Move(fyne.NewPos(520, 450))
+   aLabelFuturConcert := widget.NewLabelWithStyle("Concerts Futurs :", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+   aLabelFuturConcert.Move(fyne.NewPos(750, 450))
+
+   // Définit une liste pour afficher les concerts passés de l'artiste sélectionné.
+   aPastConcerts := widget.NewList(
+	   func() int { return 1 },
+	   func() fyne.CanvasObject { return widget.NewLabel("") },
+	   func(lii widget.ListItemID, co fyne.CanvasObject) {},
+   )
+   aPastConcerts.Resize(fyne.NewSize(250, 200))
+   aPastConcerts.Move(fyne.NewPos(520, 500))
+
+   // Définit une liste pour afficher les concerts futurs de l'artiste sélectionné.
+   aFuturConcerts := widget.NewList(
+	   func() int { return 1 },
+	   func() fyne.CanvasObject { return widget.NewLabel("") },
+	   func(lii widget.ListItemID, co fyne.CanvasObject) {},
+   )
+   aFuturConcerts.Resize(fyne.NewSize(250, 200))
+   aFuturConcerts.Move(fyne.NewPos(750, 500))
+
+   // Crée une liste des noms d'artistes pour affichage.
+   for _, artist := range artists {
+	   listArtistName = append(listArtistName, artist.Name)
+   }
+
+   // Crée une liste de sélection des artistes.
+   list := widget.NewList(
+	   func() int { return len(listArtistName) },
+	   func() fyne.CanvasObject { return widget.NewLabel("Liste des artistes") },
+	   func(lii widget.ListItemID, co fyne.CanvasObject) {
+		   co.(*widget.Label).SetText(listArtistName[lii])
+	   },
+   )
+   list.Resize(fyne.NewSize(280, 500))
+   list.Move(fyne.NewPos(0, 200))
+
+   // Crée une zone de recherche pour filtrer les artistes.
+   searchEntry := widget.NewEntry()
+   searchButton := widget.NewButton("Rechercher", func() {
+	   // Nouvelle liste pour les résultats de la recherche
+	   filteredList := []string{}
+
+	   // Parcourir la liste d'origine et ajouter les éléments correspondants à la nouvelle liste
+	   for _, item := range listArtistName {
+		   if strings.Contains(strings.ToLower(item), strings.ToLower(searchEntry.Text)) {
+			   filteredList = append(filteredList, item)
+		   }
+	   }
+	   // TODO
+
+	   // Mettre à jour la liste avec les résultats de la recherche
+	   list.Length = func() int {
+		   return len(filteredList)
+	   }
+	   list.CreateItem = func() fyne.CanvasObject {
+		   return widget.NewLabel("")
+	   }
+	   list.UpdateItem = func(index int, item fyne.CanvasObject) {
+		   item.(*widget.Label).SetText(filteredList[index])
+		   //item.(*widget.ListItemID) = index
+		   item.(*widget.Label).SetText(filteredList[index])
+
+	   }
+	   
+	   list.Refresh()
+   })
+   clearButton := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
+	   searchEntry.SetText("")
+
+	   // Mettre à jour la liste avec les résultats de la recherche
+	   list.Length = func() int {
+		   return len(listArtistName)
+	   }
+	   list.CreateItem = func() fyne.CanvasObject {
+		   return widget.NewLabel("")
+	   }
+	   list.UpdateItem = func(index int, item fyne.CanvasObject) {
+		   item.(*widget.Label).SetText(listArtistName[index])
+	   }// TODO : fix affichage
+	   list.Refresh()
+   })
+
+   searchBar := container.NewVBox(
+	   searchEntry,
+	   searchButton,
+	   clearButton,
+   )
+   searchBar.Resize(fyne.NewSize(280, 400))
+
+   // Contenu de l'application.
+   content := container.NewWithoutLayout(
+	   searchBar,
+	   list,
+   )
+
+   separator := widget.NewSeparator()
+   separator.Move(fyne.NewPos(500, 0))
+
+   nameContainer := container.NewVBox(
+	   aName,
+	   aFirstAlbum,
+   )
+   nameContainer.Move(fyne.NewPos(750, 50))
+
+   infoArtist := container.NewWithoutLayout(
+	   aTitle,
+	   aImage,
+	   nameContainer,
+	   aMembers,
+	   aPastConcerts,
+	   aFuturConcerts,
+	   aLabelPastConcert,
+	   aLabelFuturConcert,
+   )
+   infoArtist.Resize(fyne.NewSize(480, 800))
+   infoArtist.Hide()
+
+   // TODO
+   list.OnSelected = func(id widget.ListItemID) {
+	   // Action lorsqu'un artiste est sélectionné dans la liste.
+
+	   // Récupère les informations de l'artiste sélectionné.
+	   artist := artists[id]
+
+	   //RECHERCHE TOKEN SPOTIFY
+	   var token []data_structure.SpotifyToken
+	   url := "https://accounts.spotify.com/api/token"
+	   data := []byte("grant_type=client_credentials&client_id=b53fff295a97464cb9128b29bc8f3238&client_secret=71780062d1b64efe9a1e8690ed37d008")
+
+	   req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
+	   if err != nil {
+		   fmt.Println("Error creating request:", err)
+		   return
+	   }
+
+	   req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	   client := &http.Client{}
+	   resp, _ := client.Do(req)
+	   fmt.Print(json.NewDecoder(resp.Body).Decode(&token))
+
+	   //RECHERCHE ID
+	   /*url := "https://api.spotify.com/v1/search?q=The+Beatles&type=artist&limit=1&offset=1"
+	   var bearer = "Bearer BQDBKJ5eo5jxbtpWjVOj7ryS84khybFpP_lTqzV7uV-T_m0cTfwvdn5BnBSKPxKgEb11"
+	   req, _ := http.NewRequest("GET", url, nil)
+	   req.Header.Add("Authorization", bearer)
+	   client := &http.Client{}
+	   resp, _ := client.Do(req)
+	   fmt.Print(resp)*/
+
+	   // Met à jour les différents éléments d'affichage avec les informations de l'artiste.
+	   aName.Text = artist.Name
+	   aName.Refresh()
+
+	   // Construit la liste des membres du groupe de l'artiste.
+	   aMembersList := "Membre : \n"
+	   for _, member := range artist.Members {
+		   aMembersList += "- " + member + "\n"
+	   }
+	   aMembers.Text = aMembersList
+	   aMembers.Refresh()
+
+	   aCreationDate.Text = strconv.Itoa(artist.CreationDate)
+	   aImagePath := utils.DownloadImage(artist.Image)
+	   aImage.File = aImagePath
+	   aImage.Refresh()
+
+	   aFirstAlbum.Text = "Date première album : " + artist.FirstAlbum
+	   aFirstAlbum.Refresh()
+
+	   // Construit la liste des concerts passés de l'artiste.
+	   listConcertPast = nil
+	   for _, concert := range artists[id].PastConcert {
+		   listConcertPast = append(listConcertPast, concert.Location+" : "+concert.Dates)
+	   }
+	   aPastConcerts.Length = func() int {
+		   return len(listConcertPast)
+	   }
+	   aPastConcerts.CreateItem = func() fyne.CanvasObject {
+		   return widget.NewLabel("")
+	   }
+	   aPastConcerts.UpdateItem = func(index int, item fyne.CanvasObject) {
+		   item.(*widget.Label).SetText(listConcertPast[index])
+	   }
+	   aPastConcerts.Refresh()
+
+	   // Construit la liste des concerts futurs de l'artiste.
+	   listConcertFutur = nil
+	   for _, concert := range artists[id].FuturConcert {
+		   listConcertFutur = append(listConcertFutur, concert.Location+" : "+concert.Dates)
+	   }
+	   aFuturConcerts.Length = func() int {
+		   return len(listConcertFutur)
+	   }
+	   aFuturConcerts.CreateItem = func() fyne.CanvasObject {
+		   return widget.NewLabel("")
+	   }
+	   aFuturConcerts.UpdateItem = func(index int, item fyne.CanvasObject) {
+		   item.(*widget.Label).SetText(listConcertFutur[index])
+	   }
+	   aFuturConcerts.Refresh()
+
+	   // Affiche les informations de l'artiste sélectionné.
+	   if infoArtist.Hidden {
+		   infoArtist.Show()
+	   }
+   }
+
+   // Configure le contenu de la fenêtre.
+   window.SetContent(
+	   container.NewWithoutLayout(
+		   content,
+		   separator,
+		   infoArtist),
+   )
+
+   // Affiche et exécute l'application.
+   window.ShowAndRun()
+}
+
+
