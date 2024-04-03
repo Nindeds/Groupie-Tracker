@@ -3,15 +3,19 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/widget"
 	"net/http"
 
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/widget"
 )
 
-const apiURL = "https://groupietrackers.herokuapp.com/api/artists"
+const baseURL = "https://groupietrackers.herokuapp.com/api"
+
+type Location struct {
+	ID        int64    `json:"id"`
+	Locations []string `json:"locations"`
+	Dates     string   `json:"dates"`
+}
 
 type Artist struct {
 	ID           int64    `json:"id"`
@@ -26,7 +30,7 @@ type Artist struct {
 }
 
 func main() {
-	artists, err := fetchArtists(apiURL)
+	artists, err := fetchArtists(baseURL + "/artists")
 	if err != nil {
 		fmt.Println("Erreur lors de la récupération des artistes :", err)
 		return
@@ -35,29 +39,15 @@ func main() {
 	myApp := app.New()
 	myWindow := myApp.NewWindow("Groupie Tracker")
 
+	searchInput := widget.NewEntry()
+	searchbutton := widget.NewButton("Rechercher", func() {
+
+	})
+
 	var artistNames []string
 	for _, artist := range artists {
 		artistNames = append(artistNames, artist.Name)
 	}
-
-	// Créer une liste des noms
-	artistList := widget.NewList(
-		func() int {
-			return len(artistNames)
-		},
-		func() fyne.CanvasObject {
-			return widget.NewLabel("")
-		},
-		func(index int, obj fyne.CanvasObject) {
-			obj.(*widget.Label).SetText(artistNames[index])
-		},
-	)
-
-	// Afficher la liste des artistes dans une fenêtre
-	myWindow.SetContent(container.NewVBox(
-		widget.NewLabel("Artistes :"),
-		container.NewScroll(artistList),
-	))
 	fmt.Println(artists)
 
 	myWindow.ShowAndRun()
@@ -78,4 +68,21 @@ func fetchArtists(apiURL string) ([]Artist, error) {
 	}
 
 	return artists, nil
+}
+
+func fetchLocations(path string) ([]Location, error) {
+	var data []Location
+
+	response, err := http.Get(baseURL + path)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	err = json.NewDecoder(response.Body).Decode(&data)
+	if err != nil {
+		return nil, err
+	}
+
+	return data, nil
 }
