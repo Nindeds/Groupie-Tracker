@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"fyne.io/fyne/v2/widget"
 	"net/http"
 
 	"fyne.io/fyne/v2/app"
@@ -11,7 +10,11 @@ import (
 
 const baseURL = "https://groupietrackers.herokuapp.com/api"
 
-type Location struct {
+type LocationIndex struct {
+	LocationsURL string `json:"locations"`
+}
+
+type LocationData struct {
 	ID        int64    `json:"id"`
 	Locations []string `json:"locations"`
 	Dates     string   `json:"dates"`
@@ -36,20 +39,27 @@ func main() {
 		return
 	}
 
+	Location, err := fetchLocations(baseURL + "/locations")
+	if err != nil {
+		fmt.Println("Erreur lors de la récupération des localisations:", err)
+		return
+	}
+
 	myApp := app.New()
 	myWindow := myApp.NewWindow("Groupie Tracker")
 
-	searchInput := widget.NewEntry()
+	/*searchInput := widget.NewEntry()
 	searchbutton := widget.NewButton("Rechercher", func() {
 
 	})
+
+	*/
 
 	var artistNames []string
 	for _, artist := range artists {
 		artistNames = append(artistNames, artist.Name)
 	}
-	fmt.Println(artists)
-
+	fmt.Println(Location)
 	myWindow.ShowAndRun()
 }
 
@@ -70,19 +80,35 @@ func fetchArtists(apiURL string) ([]Artist, error) {
 	return artists, nil
 }
 
-func fetchLocations(path string) ([]Location, error) {
-	var data []Location
+func fetchLocations(url string) ([]string, error) {
+	var locationIndex LocationIndex
 
-	response, err := http.Get(baseURL + path)
+	// Envoyer une requête GET pour récupérer l'URL des localisations
+	response, err := http.Get(url)
 	if err != nil {
 		return nil, err
 	}
 	defer response.Body.Close()
 
-	err = json.NewDecoder(response.Body).Decode(&data)
+	// Décoder la réponse JSON pour obtenir l'URL des localisations
+	err = json.NewDecoder(response.Body).Decode(&locationIndex)
 	if err != nil {
 		return nil, err
 	}
 
-	return data, nil
+	// Maintenant, vous pouvez envoyer une nouvelle requête GET à l'URL des localisations pour récupérer les données réelles
+	locationsResponse, err := http.Get(locationIndex.LocationsURL)
+	if err != nil {
+		return nil, err
+	}
+	defer locationsResponse.Body.Close()
+
+	// Décodez la réponse JSON pour obtenir les données de localisation réelles
+	var locations []string
+	err = json.NewDecoder(locationsResponse.Body).Decode(&locations)
+	if err != nil {
+		return nil, err
+	}
+
+	return locations, nil
 }
