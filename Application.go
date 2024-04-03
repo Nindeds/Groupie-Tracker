@@ -1,4 +1,4 @@
-package main
+package Groupie_Tracker
 
 import (
 	"encoding/json"
@@ -10,27 +10,6 @@ import (
 
 const baseURL = "https://groupietrackers.herokuapp.com/api"
 
-type LocationIndex struct {
-	LocationsURL string `json:"locations"`
-}
-
-type LocationData struct {
-	ID        int64    `json:"id"`
-	Locations []string `json:"locations"`
-	Dates     string   `json:"dates"`
-}
-
-type Artist struct {
-	ID           int64    `json:"id"`
-	Image        string   `json:"image"`
-	Name         string   `json:"name"`
-	Members      []string `json:"members"`
-	CreationDate int64    `json:"creationDate"`
-	FirstAlbum   string   `json:"firstAlbum"`
-	Locations    string   `json:"locations"`
-	ConcertDates string   `json:"concertDates"`
-	Relations    string   `json:"relations"`
-}
 
 func main() {
 	artists, err := fetchArtists(baseURL + "/artists")
@@ -62,6 +41,8 @@ func main() {
 	fmt.Println(Location)
 	myWindow.ShowAndRun()
 }
+
+func fetch
 
 func fetchArtists(apiURL string) ([]Artist, error) {
 	var artists []Artist
